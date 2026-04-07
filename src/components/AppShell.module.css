@@ -1,0 +1,8 @@
+.shell {
+  min-height: 100dvh;
+  position: relative;
+}
+
+.tabContent {
+  min-height: 100dvh;
+}
