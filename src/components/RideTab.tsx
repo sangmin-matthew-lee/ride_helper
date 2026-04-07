@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { getUserLocations, getRecentRides, saveRecentRide } from "@/lib/firestore";
-import { buildGoogleMapsDirectionsUrl } from "@/lib/googleMapsUrls";
+import { openGoogleMapsDirections } from "@/lib/googleMapsUrls";
 import { Location, RecentRide, RideStep } from "@/types";
 import RideSelect from "./RideSelect";
 import RideSort from "./RideSort";
@@ -37,17 +37,19 @@ export default function RideTab() {
     fetchData();
   }, [fetchData]);
 
-  const startRideWithMaps = async (stops: Location[]) => {
-    if (user) {
-      try {
-        await saveRecentRide(user.uid, stops);
-      } catch (e) {
-        console.error("라이드 저장 실패:", e);
-      }
-    }
-    await fetchData();
-    window.open(buildGoogleMapsDirectionsUrl(stops), "_blank");
+  const startRideWithMaps = (stops: Location[]) => {
+    openGoogleMapsDirections(stops);
     setStep("active");
+    void (async () => {
+      if (user) {
+        try {
+          await saveRecentRide(user.uid, stops);
+        } catch (e) {
+          console.error("라이드 저장 실패:", e);
+        }
+      }
+      await fetchData();
+    })();
   };
 
   const handleStartRide = (stops: Location[]) => {

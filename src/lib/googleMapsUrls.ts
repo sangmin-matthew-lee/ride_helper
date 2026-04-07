@@ -20,3 +20,20 @@ export function buildGoogleMapsDirectionsUrl(stops: Location[]): string {
     .join("|");
   return `${base}&destination=${dest.lat},${dest.lng}&waypoints=${encodeURIComponent(wps)}`;
 }
+
+/**
+ * 사용자 탭 직후 동기 호출해야 함. await 뒤에 window.open 하면 모바일에서 팝업 차단되는 경우가 많음.
+ */
+export function openGoogleMapsDirections(stops: Location[]): void {
+  if (typeof window === "undefined") return;
+  const url = buildGoogleMapsDirectionsUrl(stops);
+  const win = window.open(url, "_blank", "noopener,noreferrer");
+  if (win != null) return;
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}

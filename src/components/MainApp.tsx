@@ -11,7 +11,7 @@ import {
   getRecentRides,
   saveRecentRide,
 } from "@/lib/firestore";
-import { buildGoogleMapsDirectionsUrl } from "@/lib/googleMapsUrls";
+import { openGoogleMapsDirections } from "@/lib/googleMapsUrls";
 import AddAddressView from "./AddAddressView";
 import ManageAddressesView from "./ManageAddressesView";
 import RecentRidesView from "./RecentRidesView";
@@ -72,15 +72,17 @@ export default function MainApp({ user }: Props) {
     await fetchLocations();
   };
 
-  const handleStartRide = async (route: Location[]) => {
-    try {
-      await saveRecentRide(user.uid, route);
-    } catch (err) {
-      console.error("라이드 저장 실패:", err);
-    }
-    await fetchRecentRides();
-    window.open(buildGoogleMapsDirectionsUrl(route), "_blank");
+  const handleStartRide = (route: Location[]) => {
+    openGoogleMapsDirections(route);
     setView("navigate");
+    void (async () => {
+      try {
+        await saveRecentRide(user.uid, route);
+      } catch (err) {
+        console.error("라이드 저장 실패:", err);
+      }
+      await fetchRecentRides();
+    })();
   };
 
   const handlePickPastRide = (orderedLocationIds: string[]) => {
