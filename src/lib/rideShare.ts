@@ -1,11 +1,27 @@
-import type { Location, Vehicle } from "@/types";
+import type { Location, Rider, Vehicle } from "@/types";
 import { buildGoogleMapsDirectionsUrl } from "./googleMapsUrls";
 
 /**
- * 차량 → 구글맵 링크 → 픽업(이름/전화) 순
+ * 라이더 → 차량 → 구글맵 링크 → 픽업(이름/전화) 순
  */
-export function buildRideShareText(stops: Location[], vehicle?: Vehicle | null): string {
+export function buildRideShareText(
+  stops: Location[],
+  vehicle?: Vehicle | null,
+  rider?: Rider | null,
+  riderNicknameFallback?: string | null
+): string {
   const parts: string[] = [];
+
+  const riderName = rider?.nickname?.trim() || riderNicknameFallback?.trim();
+  if (riderName) {
+    parts.push("── 운행 라이더 ──");
+    parts.push(`이름: ${riderName}`);
+    const phone = rider?.phone?.trim();
+    if (phone) {
+      parts.push(`전화: ${phone}`);
+    }
+    parts.push("");
+  }
 
   if (vehicle) {
     parts.push("── 운행 차량 ──");
@@ -39,9 +55,16 @@ export type ShareRideResult = "shared" | "clipboard" | "aborted";
  */
 export async function shareRideContent(
   stops: Location[],
-  vehicle?: Vehicle | null
+  vehicle?: Vehicle | null,
+  rider?: Rider | null,
+  riderNicknameFallback?: string | null
 ): Promise<ShareRideResult> {
-  const text = buildRideShareText(stops, vehicle ?? undefined);
+  const text = buildRideShareText(
+    stops,
+    vehicle ?? undefined,
+    rider ?? undefined,
+    riderNicknameFallback ?? undefined
+  );
   if (typeof navigator !== "undefined" && navigator.share) {
     try {
       await navigator.share({

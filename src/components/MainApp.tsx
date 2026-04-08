@@ -292,7 +292,7 @@ export default function MainApp({ user }: Props) {
 
   const handleShareRoute = useCallback(
     async (route: Location[], rider: Rider | null, vehicle: Vehicle | null) => {
-      const result = await shareRideContent(route, vehicle);
+      const result = await shareRideContent(route, vehicle, rider);
       if (result === "clipboard") {
         alert("클립보드에 복사했어요");
       }
@@ -384,6 +384,33 @@ export default function MainApp({ user }: Props) {
     }
   };
 
+  const handleShareActiveRideFromList = useCallback(
+    async (ride: RideActiveEntry) => {
+      const route = ride.stops
+        .map((s) => locations.find((l) => l.id === s.id))
+        .filter((l): l is Location => !!l);
+      if (route.length === 0) {
+        alert("경로에 쓸 주소가 없어요. 주소가 삭제됐을 수 있어요.");
+        return;
+      }
+      const vehicle =
+        ride.vehicleId != null && ride.vehicleId !== ""
+          ? vehicles.find((v) => v.id === ride.vehicleId) ?? null
+          : null;
+      const rider =
+        ride.riderId != null && ride.riderId !== ""
+          ? riders.find((r) => r.id === ride.riderId) ?? null
+          : null;
+      const riderNicknameFallback =
+        !rider && ride.riderNickname?.trim() ? ride.riderNickname.trim() : null;
+      const result = await shareRideContent(route, vehicle, rider, riderNicknameFallback);
+      if (result === "clipboard") {
+        alert("클립보드에 복사했어요");
+      }
+    },
+    [locations, vehicles, riders]
+  );
+
   if (view === "register") {
     return (
       <>
@@ -463,6 +490,7 @@ export default function MainApp({ user }: Props) {
         onBack={() => setView("home")}
         onPickRide={handlePickActiveRide}
         onDeleteRide={handleDeleteActiveRide}
+        onShareRide={handleShareActiveRideFromList}
       />
     );
   }

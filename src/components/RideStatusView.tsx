@@ -10,6 +10,8 @@ interface Props {
   onBack: () => void;
   onPickRide: (ride: RideActiveEntry) => void;
   onDeleteRide: (ride: RideActiveEntry) => void | Promise<void>;
+  /** Web Share / 클립보드로 라이드 내용만 다시 공유 (저장 데이터는 그대로) */
+  onShareRide: (ride: RideActiveEntry) => void | Promise<void>;
 }
 
 function summarizeRide(ride: RideActiveEntry): string {
@@ -29,6 +31,7 @@ export default function RideStatusView({
   onBack,
   onPickRide,
   onDeleteRide,
+  onShareRide,
 }: Props) {
   const sections = useMemo(() => {
     const withDate = rides.filter((r) => r.rideDateKey);
@@ -90,6 +93,26 @@ export default function RideStatusView({
     void onDeleteRide(ride);
   };
 
+  const handleShare = (ride: RideActiveEntry) => {
+    const validIds = ride.stops
+      .filter((s) => locations.some((l) => l.id === s.id))
+      .map((s) => s.id);
+    if (validIds.length === 0) {
+      alert("이 경로의 주소가 모두 삭제되어 공유할 수 없습니다.");
+      return;
+    }
+    if (validIds.length < ride.stops.length) {
+      if (
+        !confirm(
+          "일부 주소가 삭제됐어요. 남은 경유지만 공유할까요?"
+        )
+      ) {
+        return;
+      }
+    }
+    void onShareRide(ride);
+  };
+
   return (
     <div className={styles.wrapper}>
       <div className={styles.topBar}>
@@ -121,8 +144,9 @@ export default function RideStatusView({
           <>
             <p className={styles.hint}>
               가까운 날짜부터 묶여 있어요. 라이드 공유 후 아직 일정이 끝나지 않은 항목만 보여요.
-              카드를 누르면 경로·라이더·차량을 수정할 수 있어요. 삭제하면 Firebase에 저장된 이 항목도
-              지워지고, 그 날짜·시간대 라이더·차량 배정이 풀려요.
+              카드를 누르면 경로·라이더·차량을 수정할 수 있어요. 공유 아이콘으로 같은 내용을 다시
+              공유할 수 있어요. 삭제하면 Firebase에 저장된 이 항목도 지워지고, 그 날짜·시간대 라이더·차량
+              배정이 풀려요.
             </p>
             <div className={styles.sections}>
               {sections.map((section) => (
@@ -170,21 +194,40 @@ export default function RideStatusView({
                             <span className={styles.rideFieldValue}>{formatWhenRide(ride)}</span>
                           </div>
                         </button>
-                        <button
-                          type="button"
-                          className={styles.deleteRideBtn}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(ride);
-                          }}
-                          aria-label="라이드 삭제"
-                          id={`ride-status-delete-${ride.id}`}
-                        >
-                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 6h18M8 6V4h8v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                            <path d="M10 11v6M14 11v6" />
-                          </svg>
-                        </button>
+                        <div className={styles.rideCardActions}>
+                          <button
+                            type="button"
+                            className={styles.shareRideBtn}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleShare(ride);
+                            }}
+                            aria-label="다시 공유하기"
+                            id={`ride-status-share-${ride.id}`}
+                          >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <circle cx="18" cy="5" r="3"/>
+                              <circle cx="6" cy="12" r="3"/>
+                              <circle cx="18" cy="19" r="3"/>
+                              <path d="M8.59 13.51 15.42 17.49M15.41 6.51 8.59 10.49"/>
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.deleteRideBtn}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(ride);
+                            }}
+                            aria-label="라이드 삭제"
+                            id={`ride-status-delete-${ride.id}`}
+                          >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 6h18M8 6V4h8v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                              <path d="M10 11v6M14 11v6" />
+                            </svg>
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>
