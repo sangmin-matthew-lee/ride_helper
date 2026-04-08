@@ -1,7 +1,13 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { getUserLocations, addUserLocation, deleteUserLocation, updateUserLocation } from "@/lib/firestore";
+import {
+  getUserLocations,
+  addUserLocation,
+  deleteUserLocation,
+  updateUserLocation,
+  isNicknameTaken,
+} from "@/lib/firestore";
 import { Location } from "@/types";
 import AddAddressView from "./AddAddressView";
 import ManageAddressesView from "./ManageAddressesView";
@@ -50,7 +56,15 @@ export default function HomeTab() {
   };
 
   if (view === "add") {
-    return <AddAddressView onBack={() => setView("main")} onSave={handleAdd} />;
+    return (
+      <AddAddressView
+        onBack={() => setView("main")}
+        onSave={handleAdd}
+        checkNicknameDuplicate={(nickname) =>
+          user ? isNicknameTaken(user.uid, nickname) : Promise.resolve(false)
+        }
+      />
+    );
   }
 
   if (view === "manage") {
@@ -123,8 +137,25 @@ export default function HomeTab() {
           <div className={styles.previewSection}>
             <div className="section-title">저장된 주소 ({locations.length})</div>
             {locations.map((loc) => (
-              <div key={loc.id} className={styles.previewCard}>
-                <div className={styles.previewDot} />
+              <div
+                key={loc.id}
+                className={`${styles.previewCard} ${
+                  loc.gender === "male"
+                    ? styles.previewCardMale
+                    : loc.gender === "female"
+                      ? styles.previewCardFemale
+                      : ""
+                }`}
+              >
+                <div
+                  className={`${styles.previewDot} ${
+                    loc.gender === "male"
+                      ? styles.previewDotMale
+                      : loc.gender === "female"
+                        ? styles.previewDotFemale
+                        : ""
+                  }`}
+                />
                 <div className={styles.previewInfo}>
                   <span className={styles.previewNick}>{loc.nickname}</span>
                   <span className={styles.previewAddr}>{loc.address}</span>

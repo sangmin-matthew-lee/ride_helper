@@ -111,7 +111,7 @@ export default function LoginScreen() {
           </div>
           <div className={styles.feature}>
             <span>🗺️</span>
-            <span>라이드 경로 설정</span>
+            <span>라이드 구성</span>
           </div>
           <div className={styles.feature}>
             <span>🚗</span>

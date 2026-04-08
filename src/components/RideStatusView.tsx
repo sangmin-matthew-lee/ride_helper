@@ -1,79 +1,61 @@
 "use client";
 import { useMemo } from "react";
-import { Location, RecentRide, RideDayPeriod } from "@/types";
-import { formatRideSlotSummaryLine } from "@/lib/datetime";
+import { Location, RideActiveEntry } from "@/types";
+import { formatDateKeyLabelAppTz, formatRideSlotSummaryLine } from "@/lib/datetime";
 import styles from "./RecentRidesView.module.css";
 
 interface Props {
   locations: Location[];
-  recentRides: RecentRide[];
+  rides: RideActiveEntry[];
   onBack: () => void;
-  /** 유효한 경유지로 확인된 뒤 라이드 구성(경로)으로 이동 */
-  onPickRide: (ride: RecentRide) => void;
+  onPickRide: (ride: RideActiveEntry) => void;
+  onDeleteRide: (ride: RideActiveEntry) => void | Promise<void>;
 }
 
-function summarizeRide(ride: RecentRide): string {
+function summarizeRide(ride: RideActiveEntry): string {
   return ride.stops.map((s) => s.nickname).join(" → ");
 }
 
-function formatWhenRide(ride: RecentRide): string {
+function formatWhenRide(ride: RideActiveEntry): string {
   if (ride.rideDateKey && ride.ridePeriod) {
     return formatRideSlotSummaryLine(ride.rideDateKey, ride.ridePeriod);
   }
-  return `일정 없음 (저장 ${ride.date})`;
+  return "—";
 }
 
-function slotKey(r: RecentRide): string {
-  return `${r.rideDateKey}_${r.ridePeriod}`;
-}
-
-/** 같은 날짜면 오후 슬롯을 오전보다 위(같은 날에서 더 늦은 일정이 먼저) */
-function compareSlotKeysDesc(a: string, b: string): number {
-  const partsA = a.split("_");
-  const partsB = b.split("_");
-  const pa = partsA.pop() as RideDayPeriod;
-  const pb = partsB.pop() as RideDayPeriod;
-  const da = partsA.join("_");
-  const db = partsB.join("_");
-  if (da !== db) return db.localeCompare(da);
-  if (pa === pb) return 0;
-  return pa === "pm" ? -1 : 1;
-}
-
-export default function RecentRidesView({
+export default function RideStatusView({
   locations,
-  recentRides,
+  rides,
   onBack,
   onPickRide,
+  onDeleteRide,
 }: Props) {
   const sections = useMemo(() => {
-    const withSlot = recentRides.filter((r) => r.rideDateKey && r.ridePeriod);
-    const legacy = recentRides.filter((r) => !r.rideDateKey || !r.ridePeriod);
-    const keys = [...new Set(withSlot.map(slotKey))].sort(compareSlotKeysDesc);
-    const dated = keys.map((k) => {
-      const parts = k.split("_");
-      const period = parts.pop() as RideDayPeriod;
-      const dateKey = parts.join("_");
-      const ridesIn = withSlot
-        .filter((r) => r.rideDateKey === dateKey && r.ridePeriod === period)
-        .sort((a, b) => b.createdAt - a.createdAt);
+    const withDate = rides.filter((r) => r.rideDateKey);
+    const legacy = rides.filter((r) => !r.rideDateKey);
+    const keys = [...new Set(withDate.map((r) => r.rideDateKey!))].sort((a, b) =>
+      a.localeCompare(b)
+    );
+    const dated = keys.map((dateKey) => {
+      const ridesIn = withDate
+        .filter((r) => r.rideDateKey === dateKey)
+        .sort((a, b) => b.sharedAt - a.sharedAt);
       return {
-        key: k,
-        title: formatRideSlotSummaryLine(dateKey, period),
+        key: dateKey,
+        title: formatDateKeyLabelAppTz(dateKey),
         rides: ridesIn,
       };
     });
     if (legacy.length) {
       dated.push({
         key: "legacy",
-        title: "일정 없음 (예전 저장)",
-        rides: [...legacy].sort((a, b) => b.createdAt - a.createdAt),
+        title: "일정 없음",
+        rides: [...legacy].sort((a, b) => b.sharedAt - a.sharedAt),
       });
     }
     return dated;
-  }, [recentRides]);
-
-  const handleSelect = (ride: RecentRide) => {
+  }, [rides]);
+  const handleSelect = (ride: RideActiveEntry) => {
     const validIds = ride.stops
       .filter((s) => locations.some((l) => l.id === s.id))
       .map((s) => s.id);
@@ -90,7 +72,22 @@ export default function RecentRidesView({
         return;
       }
     }
-    onPickRide(ride);
+    onPickRide({ ...ride, stops: ride.stops });
+  };
+
+  const handleDelete = (ride: RideActiveEntry) => {
+    const slot =
+      ride.rideDateKey && ride.ridePeriod
+        ? `${ride.rideDateKey} (${ride.ridePeriod === "am" ? "오전" : "오후"})`
+        : "해당 일정";
+    if (
+      !confirm(
+        `이 라이드를 삭제할까요?\nFirebase에서도 삭제되며, ${slot}에 배정됐던 라이더·차량은 다시 선택할 수 있어요.`
+      )
+    ) {
+      return;
+    }
+    void onDeleteRide(ride);
   };
 
   return (
@@ -100,31 +97,32 @@ export default function RecentRidesView({
           className={styles.backBtn}
           onClick={onBack}
           type="button"
-          id="recent-rides-back-btn"
+          id="ride-status-back-btn"
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
         </button>
-        <h2 className={styles.topTitle}>이전 라이드</h2>
+        <h2 className={styles.topTitle}>라이드 현황</h2>
         <div style={{ width: 40 }} />
       </div>
 
       <div className={styles.content}>
-        {recentRides.length === 0 ? (
+        {rides.length === 0 ? (
           <div className={styles.emptyState}>
-            <div className={styles.emptyIcon}>🗂️</div>
-            <p>저장된 라이드가 없어요</p>
+            <div className={styles.emptyIcon}>📋</div>
+            <p>진행 중인 라이드가 없어요</p>
             <p className={styles.emptyHint}>
-              라이드 시작 시 경로가 여기에 쌓여요(최대 10건). 라이드 공유로 저장된 항목은 일정이
-              끝나면 자동으로 들어와요. 같은 순서로 다시 갈 때 불러올 수 있어요.
+              라이드 공유를 하면 여기에 표시돼요. 라이드 일정이 끝나면 자동으로 이전 라이드로
+              옮겨져요.
             </p>
           </div>
         ) : (
           <>
             <p className={styles.hint}>
-              날짜·오전/오후별로 묶여 있고, 같은 묶음 안에서는 가장 최근에 저장한 순이에요. 항목을
-              누르면 그때와 같은 날짜·시간대와 순서로 라이드 구성(경로) 화면으로 이동해요.
+              가까운 날짜부터 묶여 있어요. 라이드 공유 후 아직 일정이 끝나지 않은 항목만 보여요.
+              카드를 누르면 경로·라이더·차량을 수정할 수 있어요. 삭제하면 Firebase에 저장된 이 항목도
+              지워지고, 그 날짜·시간대 라이더·차량 배정이 풀려요.
             </p>
             <div className={styles.sections}>
               {sections.map((section) => (
@@ -132,12 +130,12 @@ export default function RecentRidesView({
                   <h3 className={styles.weekdayTitle}>{section.title}</h3>
                   <ul className={styles.list}>
                     {section.rides.map((ride) => (
-                      <li key={ride.id}>
+                      <li key={ride.id} className={styles.rideCardRow}>
                         <button
                           type="button"
                           className={styles.rideCard}
                           onClick={() => handleSelect(ride)}
-                          id={`recent-ride-${ride.id}`}
+                          id={`ride-status-${ride.id}`}
                         >
                           <div className={styles.rideField}>
                             <span className={styles.rideFieldLabel}>라이더</span>
@@ -171,6 +169,21 @@ export default function RecentRidesView({
                             <span className={styles.rideFieldLabel}>언제 라이드</span>
                             <span className={styles.rideFieldValue}>{formatWhenRide(ride)}</span>
                           </div>
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.deleteRideBtn}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(ride);
+                          }}
+                          aria-label="라이드 삭제"
+                          id={`ride-status-delete-${ride.id}`}
+                        >
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 6h18M8 6V4h8v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                            <path d="M10 11v6M14 11v6" />
+                          </svg>
                         </button>
                       </li>
                     ))}

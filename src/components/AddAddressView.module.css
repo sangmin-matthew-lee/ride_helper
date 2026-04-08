@@ -249,6 +249,147 @@
 }
 .nickInput:disabled { opacity: 0.4; }
 
+.nickRow {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.nickRow .nickInput {
+  flex: 1;
+  min-width: 0;
+}
+
+.dupBtn {
+  flex-shrink: 0;
+  padding: 0 14px;
+  font-size: 0.8125rem;
+  border-radius: var(--radius-md);
+  white-space: nowrap;
+}
+
+.dupMsg {
+  font-size: 0.8125rem;
+  color: #fca5a5;
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
+
+.dupOk {
+  font-size: 0.8125rem;
+  color: hsl(142, 71%, 55%);
+  margin: 4px 0 0;
+}
+
+.phoneBlock {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.phoneLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.phoneInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.9375rem;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.phoneInput::placeholder {
+  color: var(--text-muted);
+}
+
+.phoneInput:focus {
+  border-color: var(--blue-500);
+  box-shadow: 0 0 0 3px rgba(59,130,246,0.2);
+}
+
+.phoneInput:disabled {
+  opacity: 0.4;
+}
+
+.genderBlock {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-glass);
+}
+
+.genderLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.genderRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.genderOption {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  background: rgba(255,255,255,0.07);
+  border: 1px solid var(--border-glass);
+  cursor: pointer;
+  font-size: 0.9375rem;
+  color: var(--text-primary);
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.genderSelected {
+  border-color: rgba(59, 130, 246, 0.5) !important;
+  background: rgba(59, 130, 246, 0.12) !important;
+}
+
+.genderOption input {
+  accent-color: var(--blue-500);
+}
+
+.genderOption input:disabled + span {
+  opacity: 0.45;
+}
+
+.addrGroupBlock {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-glass);
+}
+
+.addrGroupLabel {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+
+.addrGroupHint {
+  margin: 10px 0 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 /* Bottom save bar */
 .bottomBar {
   position: fixed;

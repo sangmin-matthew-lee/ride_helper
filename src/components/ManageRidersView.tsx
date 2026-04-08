@@ -1,39 +1,33 @@
 "use client";
 import { useState } from "react";
-import { Location, LocationGender, LocationGroup } from "@/types";
+import { Rider } from "@/types";
 import { motion, AnimatePresence } from "framer-motion";
 import styles from "./ManageAddressesView.module.css";
 
 interface Props {
-  locations: Location[];
+  riders: Rider[];
   onBack: () => void;
   onDelete: (id: string) => Promise<void>;
-  onUpdate: (id: string, updates: Partial<Omit<Location, "id">>) => Promise<void>;
+  onUpdate: (id: string, updates: Partial<Omit<Rider, "id">>) => Promise<void>;
 }
 
-export default function ManageAddressesView({ locations, onBack, onDelete, onUpdate }: Props) {
+export default function ManageRidersView({ riders, onBack, onDelete, onUpdate }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editNickname, setEditNickname] = useState("");
   const [editPhone, setEditPhone] = useState("");
-  const [editGroup, setEditGroup] = useState<LocationGroup>("fixed");
-  const [editGender, setEditGender] = useState<LocationGender>("male");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
 
-  const startEdit = (loc: Location) => {
-    setEditingId(loc.id);
-    setEditNickname(loc.nickname);
-    setEditPhone(loc.phone ?? "");
-    setEditGroup(loc.group ?? "fixed");
-    setEditGender(loc.gender ?? "male");
+  const startEdit = (r: Rider) => {
+    setEditingId(r.id);
+    setEditNickname(r.nickname);
+    setEditPhone(r.phone ?? "");
   };
 
   const cancelEdit = () => {
     setEditingId(null);
     setEditNickname("");
     setEditPhone("");
-    setEditGroup("fixed");
-    setEditGender("male");
   };
 
   const saveEdit = async (id: string) => {
@@ -43,15 +37,13 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
     await onUpdate(id, {
       nickname: editNickname.trim(),
       ...(phoneTrim ? { phone: phoneTrim } : { phone: "" }),
-      group: editGroup,
-      gender: editGender,
     });
     setSavingId(null);
     setEditingId(null);
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("이 주소를 삭제할까요?")) return;
+    if (!confirm("이 라이더를 삭제할까요?")) return;
     setDeletingId(id);
     await onDelete(id);
     setDeletingId(null);
@@ -59,33 +51,32 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
 
   return (
     <div className={styles.wrapper}>
-      {/* Top bar */}
       <div className={styles.topBar}>
-        <button className={styles.backBtn} onClick={onBack} id="manage-back-btn">
+        <button className={styles.backBtn} onClick={onBack} id="manage-riders-back-btn">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
         </button>
-        <h2 className={styles.topTitle}>주소 관리</h2>
+        <h2 className={styles.topTitle}>라이더 관리</h2>
         <div style={{ width: 40 }} />
       </div>
 
       <div className={styles.content}>
-        {locations.length === 0 ? (
+        {riders.length === 0 ? (
           <motion.div
             className={styles.emptyState}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <div className={styles.emptyIcon}>📭</div>
-            <p>저장된 주소가 없어요</p>
-            <p className={styles.emptyHint}>홈 화면으로 돌아가서 주소를 추가해보세요</p>
+            <div className={styles.emptyIcon}>👤</div>
+            <p>등록된 라이더가 없어요</p>
+            <p className={styles.emptyHint}>홈에서 라이더 등록으로 추가해보세요</p>
           </motion.div>
         ) : (
           <>
-            <div className="section-title">{locations.length}개의 저장된 주소</div>
+            <div className="section-title">{riders.length}명의 라이더</div>
             <AnimatePresence>
-              {locations.map((loc, i) => (
+              {riders.map((loc, i) => (
                 <motion.div
                   key={loc.id}
                   className={`${styles.card} ${
@@ -102,10 +93,9 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                   layout
                 >
                   {editingId === loc.id ? (
-                    /* Edit mode */
                     <div className={styles.editMode}>
                       <div className={styles.editField}>
-                        <label className={styles.editLabel}>별명 수정</label>
+                        <label className={styles.editLabel}>이름 수정</label>
                         <input
                           className={styles.editInput}
                           value={editNickname}
@@ -115,15 +105,15 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                             if (e.key === "Enter") saveEdit(loc.id);
                             if (e.key === "Escape") cancelEdit();
                           }}
-                          id={`edit-nickname-${loc.id}`}
+                          id={`rider-edit-nickname-${loc.id}`}
                         />
                       </div>
                       <div className={styles.editField}>
-                        <label className={styles.editLabel} htmlFor={`edit-phone-${loc.id}`}>
+                        <label className={styles.editLabel} htmlFor={`rider-edit-phone-${loc.id}`}>
                           전화번호
                         </label>
                         <input
-                          id={`edit-phone-${loc.id}`}
+                          id={`rider-edit-phone-${loc.id}`}
                           className={styles.editInput}
                           type="tel"
                           inputMode="tel"
@@ -133,63 +123,11 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                           placeholder="선택"
                         />
                       </div>
-                      <div className={styles.editAddr}>{loc.address}</div>
-                      <div className={styles.editField}>
-                        <label className={styles.editLabel}>성별</label>
-                        <div className={styles.editGroupRow}>
-                          <label
-                            className={`${styles.editGroupOption} ${editGender === "male" ? styles.editGroupSelected : ""}`}
-                          >
-                            <input
-                              type="radio"
-                              name={`edit-gender-${loc.id}`}
-                              checked={editGender === "male"}
-                              onChange={() => setEditGender("male")}
-                            />
-                            <span>남성</span>
-                          </label>
-                          <label
-                            className={`${styles.editGroupOption} ${editGender === "female" ? styles.editGroupSelected : ""}`}
-                          >
-                            <input
-                              type="radio"
-                              name={`edit-gender-${loc.id}`}
-                              checked={editGender === "female"}
-                              onChange={() => setEditGender("female")}
-                            />
-                            <span>여성</span>
-                          </label>
-                        </div>
-                      </div>
-                      <div className={styles.editField}>
-                        <label className={styles.editLabel}>그룹</label>
-                        <div className={styles.editGroupRow}>
-                          <label
-                            className={`${styles.editGroupOption} ${editGroup === "fixed" ? styles.editGroupSelected : ""}`}
-                          >
-                            <input
-                              type="radio"
-                              name={`edit-group-${loc.id}`}
-                              checked={editGroup === "fixed"}
-                              onChange={() => setEditGroup("fixed")}
-                            />
-                            <span>고정</span>
-                          </label>
-                          <label
-                            className={`${styles.editGroupOption} ${editGroup === "temporary" ? styles.editGroupSelected : ""}`}
-                          >
-                            <input
-                              type="radio"
-                              name={`edit-group-${loc.id}`}
-                              checked={editGroup === "temporary"}
-                              onChange={() => setEditGroup("temporary")}
-                            />
-                            <span>임시</span>
-                          </label>
-                        </div>
-                      </div>
+                      {loc.address?.trim() ? (
+                        <div className={styles.editAddr}>{loc.address}</div>
+                      ) : null}
                       <div className={styles.editActions}>
-                        <button className="btn btn-ghost" onClick={cancelEdit} style={{ padding: "8px 16px" }} id={`cancel-edit-${loc.id}`}>
+                        <button className="btn btn-ghost" onClick={cancelEdit} style={{ padding: "8px 16px" }} id={`rider-cancel-edit-${loc.id}`}>
                           취소
                         </button>
                         <button
@@ -197,33 +135,23 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                           onClick={() => saveEdit(loc.id)}
                           disabled={!editNickname.trim() || savingId === loc.id}
                           style={{ padding: "8px 20px", borderRadius: 10 }}
-                          id={`save-edit-${loc.id}`}
+                          id={`rider-save-edit-${loc.id}`}
                         >
                           {savingId === loc.id ? "저장 중..." : "저장"}
                         </button>
                       </div>
                     </div>
                   ) : (
-                    /* View mode */
                     <div className={styles.viewMode}>
                       <div className={styles.cardIcon}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-                          <circle cx="12" cy="10" r="3"/>
+                          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                          <circle cx="12" cy="7" r="4"/>
                         </svg>
                       </div>
                       <div className={styles.cardInfo}>
                         <div className={styles.nameRow}>
                           <span className={styles.nickname}>{loc.nickname}</span>
-                          <span
-                            className={
-                              loc.group === "temporary"
-                                ? styles.groupBadgeTemp
-                                : styles.groupBadgeFixed
-                            }
-                          >
-                            {loc.group === "temporary" ? "임시" : "고정"}
-                          </span>
                           {loc.gender === "male" && (
                             <span className={styles.genderBadgeMale}>남</span>
                           )}
@@ -231,7 +159,9 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                             <span className={styles.genderBadgeFemale}>여</span>
                           )}
                         </div>
-                        <span className={styles.address}>{loc.address}</span>
+                        {loc.address?.trim() ? (
+                          <span className={styles.address}>{loc.address}</span>
+                        ) : null}
                         {loc.phone ? (
                           <a
                             className={styles.phoneLink}
@@ -246,7 +176,7 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                           className={styles.editBtn}
                           onClick={() => startEdit(loc)}
                           aria-label="수정"
-                          id={`edit-btn-${loc.id}`}
+                          id={`rider-edit-btn-${loc.id}`}
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -258,7 +188,7 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                           onClick={() => handleDelete(loc.id)}
                           disabled={deletingId === loc.id}
                           aria-label="삭제"
-                          id={`delete-btn-${loc.id}`}
+                          id={`rider-delete-btn-${loc.id}`}
                         >
                           {deletingId === loc.id ? (
                             <div className={styles.miniSpinner} />
