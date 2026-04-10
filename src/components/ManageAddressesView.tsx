@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Location, LocationGender, LocationGroup } from "@/types";
+import { downloadLocationsAsExcelCsv } from "@/lib/exportLocationsSpreadsheet";
 import { motion, AnimatePresence } from "framer-motion";
 import styles from "./ManageAddressesView.module.css";
 
@@ -57,6 +58,14 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
     setDeletingId(null);
   };
 
+  const handleExportExcel = () => {
+    if (locations.length === 0) {
+      alert("\uC800\uC7A5\uB41C \uC8FC\uC18C\uAC00 \uC5C6\uC5B4\uC694.");
+      return;
+    }
+    downloadLocationsAsExcelCsv(locations);
+  };
+
   return (
     <div className={styles.wrapper}>
       {/* Top bar */}
@@ -67,7 +76,23 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
           </svg>
         </button>
         <h2 className={styles.topTitle}>주소 관리</h2>
-        <div style={{ width: 40 }} />
+        <button
+          type="button"
+          className={styles.exportBtn}
+          onClick={handleExportExcel}
+          disabled={locations.length === 0}
+          aria-label={"\uC5D1\uC140\uB85C \uB0B4\uBCF4\uB0B4\uAE30"}
+          id="manage-addresses-export-btn"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <path d="M8 13h2"/>
+            <path d="M8 17h6"/>
+            <path d="M8 9h1"/>
+          </svg>
+          <span>{"\uC5D1\uC140 \uB0B4\uBCF4\uB0B4\uAE30"}</span>
+        </button>
       </div>
 
       <div className={styles.content}>
