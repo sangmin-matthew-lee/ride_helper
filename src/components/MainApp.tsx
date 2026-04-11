@@ -56,6 +56,9 @@ import RideActive from "./RideActive";
 import Script from "next/script";
 import styles from "./MainApp.module.css";
 
+/** Route step back target when skipping the date page (e.g. from recent rides). */
+type RouteEntrySource = "schedule" | "recentRides" | "rideStatus";
+
 type View =
   | "home"
   | "register"
@@ -89,6 +92,7 @@ export default function MainApp({ user }: Props) {
   const [slotAssignments, setSlotAssignments] = useState<RideSlotAssignment[]>([]);
   /** 라이드 현황에서 들어와 수정 중인 rideActive 문서 id (슬롯 배정 중 본인 라이더·차량은 배정됨 처리 제외) */
   const [editingActiveRideId, setEditingActiveRideId] = useState<string | null>(null);
+  const [routeEntrySource, setRouteEntrySource] = useState<RouteEntrySource>("schedule");
 
   const fetchLocations = useCallback(async () => {
     const data = await getUserLocations(user.uid);
@@ -187,6 +191,7 @@ export default function MainApp({ user }: Props) {
     setRidePeriod("am");
     setSlotAssignments([]);
     setEditingActiveRideId(null);
+    setRouteEntrySource("schedule");
     setView("home");
   }, []);
 
@@ -194,6 +199,11 @@ export default function MainApp({ user }: Props) {
     await addUserLocation(user.uid, data);
     await fetchLocations();
     setView("home");
+  };
+
+  const handleAddAddressInManage = async (data: Omit<Location, "id">) => {
+    await addUserLocation(user.uid, data);
+    await fetchLocations();
   };
 
   const handleDeleteAddress = async (id: string) => {
@@ -346,6 +356,7 @@ export default function MainApp({ user }: Props) {
 
   const handlePickPastRide = (ride: RecentRide) => {
     setEditingActiveRideId(null);
+    setRouteEntrySource("recentRides");
     const validIds = ride.stops
       .filter((s) => locations.some((l) => l.id === s.id))
       .map((s) => s.id);
@@ -362,6 +373,7 @@ export default function MainApp({ user }: Props) {
 
   const handlePickActiveRide = (ride: RideActiveEntry) => {
     setEditingActiveRideId(ride.id);
+    setRouteEntrySource("rideStatus");
     const validIds = ride.stops
       .filter((s) => locations.some((l) => l.id === s.id))
       .map((s) => s.id);
@@ -440,6 +452,7 @@ export default function MainApp({ user }: Props) {
         onBack={() => setView("home")}
         onDelete={handleDeleteAddress}
         onUpdate={handleUpdateAddress}
+        onAdd={handleAddAddressInManage}
       />
     );
   }
@@ -501,7 +514,10 @@ export default function MainApp({ user }: Props) {
         period={ridePeriod}
         onDateKeyChange={setRideDateKey}
         onPeriodChange={setRidePeriod}
-        onContinue={() => setView("route")}
+        onContinue={() => {
+          setRouteEntrySource("schedule");
+          setView("route");
+        }}
         onBack={() => setView("home")}
       />
     );
@@ -539,10 +555,18 @@ export default function MainApp({ user }: Props) {
         locations={locations}
         orderedIds={routeSelectionIds}
         onOrderedIdsChange={setRouteSelectionIds}
-        onBack={() => setView("rideSchedule")}
+        onBack={() => {
+          if (routeEntrySource === "recentRides") setView("recentRides");
+          else if (routeEntrySource === "rideStatus") setView("rideStatus");
+          else setView("rideSchedule");
+        }}
         onPickRider={() => setView("riderSelect")}
         userId={user.uid}
         scheduleSummary={formatRideSlotSummaryLine(rideDateKey, ridePeriod)}
+        rideDateKey={rideDateKey}
+        ridePeriod={ridePeriod}
+        onRideDateKeyChange={setRideDateKey}
+        onRidePeriodChange={setRidePeriod}
       />
     );
   }
@@ -731,6 +755,7 @@ export default function MainApp({ user }: Props) {
           onClick={() => {
             if (locations.length === 0) return;
             setEditingActiveRideId(null);
+            setRouteEntrySource("schedule");
             setRouteSelectionIds([]);
             setRideDateKey(calendarDateKeyAppTz(Date.now()));
             setRidePeriod("am");

@@ -1,7 +1,12 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
 import { Location, LocationGender, LocationGroup } from "@/types";
-import { downloadLocationsAsExcelCsv } from "@/lib/exportLocationsSpreadsheet";
+import {
+  downloadLocations,
+  geocodeAddressForImport,
+  parseLocationImportFile,
+  type LocationExportFormat,
+} from "@/lib/locationExportImport";
 import { motion, AnimatePresence } from "framer-motion";
 import styles from "./ManageAddressesView.module.css";
 
@@ -10,9 +15,16 @@ interface Props {
   onBack: () => void;
   onDelete: (id: string) => Promise<void>;
   onUpdate: (id: string, updates: Partial<Omit<Location, "id">>) => Promise<void>;
+  onAdd: (data: Omit<Location, "id">) => Promise<void>;
 }
 
-export default function ManageAddressesView({ locations, onBack, onDelete, onUpdate }: Props) {
+export default function ManageAddressesView({
+  locations,
+  onBack,
+  onDelete,
+  onUpdate,
+  onAdd,
+}: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editNickname, setEditNickname] = useState("");
   const [editPhone, setEditPhone] = useState("");
@@ -20,6 +32,11 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
   const [editGender, setEditGender] = useState<LocationGender>("male");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<LocationExportFormat>("xlsx");
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const startEdit = (loc: Location) => {
     setEditingId(loc.id);
@@ -52,48 +69,247 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("이 주소를 삭제할까요?")) return;
+    if (!confirm("\uc774 \uc8fc\uc18c\ub97c \uc0ad\uc81c\ud560\uae4c\uc694?")) return;
     setDeletingId(id);
     await onDelete(id);
     setDeletingId(null);
   };
 
-  const handleExportExcel = () => {
+  const openExportModal = () => {
     if (locations.length === 0) {
-      alert("\uC800\uC7A5\uB41C \uC8FC\uC18C\uAC00 \uC5C6\uC5B4\uC694.");
+      alert("\uc800\uc7a5\ub41c \uc8fc\uc18c\uac00 \uc5c6\uc5b4\uc694.");
       return;
     }
-    downloadLocationsAsExcelCsv(locations);
+    setExportOpen(true);
+  };
+
+  const handleConfirmExport = async () => {
+    setExporting(true);
+    try {
+      const out = downloadLocations(locations, exportFormat);
+      if (out instanceof Promise) await out;
+      setExportOpen(false);
+    } catch (e) {
+      console.error(e);
+      alert("\ub0b4\ubcf4\ub0b4\uae30 \uc911 \ubb38\uc81c\uac00 \uc0dd\uacbc\uc2b5\ub2c8\ub2e4.");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const nicknameTaken = (nickname: string) => {
+    const t = nickname.trim().toLowerCase();
+    return locations.some((l) => l.nickname.trim().toLowerCase() === t);
+  };
+
+  const handleImportChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith(".csv") && !lower.endsWith(".xlsx")) {
+      alert(
+        "Excel (.xlsx) \ub610\ub294 CSV (.csv) \ud30c\uc77c\ub9cc \ubd88\ub7ec\uc62c \uc218 \uc788\uc5b4\uc694."
+      );
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const rows = await parseLocationImportFile(file);
+      if (rows.length === 0) {
+        alert(
+          "\ubd88\ub7ec\uc62c \ub370\uc774\ud130\uac00 \uc5c6\uc5b4\uc694. \uc774\ub984\u00b7\uc8fc\uc18c\ub97c \ud655\uc778\ud574 \uc8fc\uc138\uc694."
+        );
+        return;
+      }
+      if (
+        !confirm(
+          `${rows.length}\uac1c\uc758 \uc8fc\uc18c\ub97c \ubd88\ub7ec\uc62c\uae4c\uc694?\n(\uc8fc\uc18c\ub9c8\ub2e4 \uc9c0\ub3c4\uc5d0\uc11c \uc704\uce58\ub97c \ucc3e\ub294 \ub370 \uc2dc\uac04\uc774 \uac78\ub9b4 \uc218 \uc788\uc5b4\uc694.)`
+        )
+      ) {
+        return;
+      }
+
+      const added: string[] = [];
+      const skipped: string[] = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (nicknameTaken(row.nickname)) {
+          skipped.push(`${row.nickname}: \uac19\uc740 \uc774\ub984\uc774 \uc788\uc5b4\uc694`);
+          continue;
+        }
+        const geo = await geocodeAddressForImport(row.address);
+        if (!geo) {
+          skipped.push(`${row.nickname}: \uc8fc\uc18c\ub97c \ucc3e\uc9c0 \ubabb\ud588\uc5b4\uc694`);
+          continue;
+        }
+        try {
+          await onAdd({
+            nickname: row.nickname,
+            address: geo.formattedAddress || row.address,
+            lat: geo.lat,
+            lng: geo.lng,
+            ...(row.phone.trim() ? { phone: row.phone.trim() } : {}),
+            gender: row.gender ?? "male",
+            group: row.group ?? "fixed",
+            createdAt: Date.now() + i,
+          });
+          added.push(row.nickname);
+        } catch {
+          skipped.push(`${row.nickname}: \uc800\uc7a5\uc5d0 \uc2e4\ud328\ud588\uc5b4\uc694`);
+        }
+        await new Promise((r) => setTimeout(r, 120));
+      }
+
+      let msg = `\ubd88\ub7ec\uc624\uae30 \uc644\ub8cc: ${added.length}\uac1c`;
+      if (skipped.length) {
+        msg += `\n\uac74\ub108\ub6f0 \uc2e4\ud328 ${skipped.length}\uac1c:\n${skipped.slice(0, 12).join("\n")}`;
+        if (skipped.length > 12) {
+          msg += `\n\uc678 ${skipped.length - 12}\uac74`;
+        }
+      }
+      alert(msg);
+    } catch (err) {
+      console.error(err);
+      alert(
+        "\ud30c\uc77c\uc744 \uc77d\ub294 \uc911 \uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4. \ud615\uc2dd\uc744 \ud655\uc778\ud574 \uc8fc\uc138\uc694."
+      );
+    } finally {
+      setImporting(false);
+    }
   };
 
   return (
     <div className={styles.wrapper}>
-      {/* Top bar */}
       <div className={styles.topBar}>
         <button className={styles.backBtn} onClick={onBack} id="manage-back-btn">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
         </button>
-        <h2 className={styles.topTitle}>주소 관리</h2>
-        <button
-          type="button"
-          className={styles.exportBtn}
-          onClick={handleExportExcel}
-          disabled={locations.length === 0}
-          aria-label={"\uC5D1\uC140\uB85C \uB0B4\uBCF4\uB0B4\uAE30"}
-          id="manage-addresses-export-btn"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-            <polyline points="14 2 14 8 20 8"/>
-            <path d="M8 13h2"/>
-            <path d="M8 17h6"/>
-            <path d="M8 9h1"/>
-          </svg>
-          <span>{"\uC5D1\uC140 \uB0B4\uBCF4\uB0B4\uAE30"}</span>
-        </button>
+        <h2 className={styles.topTitle}>{"\uc8fc\uc18c \uad00\ub9ac"}</h2>
+        <div className={styles.topBarActions}>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+            className={styles.hiddenFileInput}
+            onChange={handleImportChange}
+            id="manage-addresses-import-input"
+            aria-hidden
+          />
+          <button
+            type="button"
+            className={styles.importBtn}
+            onClick={() => importInputRef.current?.click()}
+            disabled={importing}
+            id="manage-addresses-import-btn"
+          >
+            {importing ? (
+              <span className={styles.btnSpinner} aria-hidden />
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+            )}
+            <span>{"\ubd88\ub7ec\uc624\uae30"}</span>
+          </button>
+          <button
+            type="button"
+            className={styles.exportBtn}
+            onClick={openExportModal}
+            disabled={locations.length === 0 || exporting}
+            aria-haspopup="dialog"
+            aria-expanded={exportOpen}
+            id="manage-addresses-export-btn"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span>{"\ub0b4\ubcf4\ub0b4\uae30"}</span>
+          </button>
+        </div>
       </div>
+
+      {exportOpen ? (
+        <div
+          className={styles.modalBackdrop}
+          role="presentation"
+          onClick={() => !exporting && setExportOpen(false)}
+        >
+          <div
+            className={styles.modalPanel}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="manage-export-title"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <h3 className={styles.modalTitle} id="manage-export-title">
+              {"\ub0b4\ubcf4\ub0b4\uae30 \ud615\uc2dd"}
+            </h3>
+            <p className={styles.modalHint}>
+              {
+                "\ud30c\uc77c \ud615\uc2dd\uc744 \uc120\ud0dd\ud55c \ub4a4 \ub2e4\uc6b4\ub85c\ub4dc\ud558\uc138\uc694."
+              }
+            </p>
+            <div className={styles.formatList}>
+              <label className={styles.formatOption}>
+                <input
+                  type="radio"
+                  name="export-format"
+                  checked={exportFormat === "xlsx"}
+                  onChange={() => setExportFormat("xlsx")}
+                />
+                <span>Excel (.xlsx)</span>
+              </label>
+              <label className={styles.formatOption}>
+                <input
+                  type="radio"
+                  name="export-format"
+                  checked={exportFormat === "csv"}
+                  onChange={() => setExportFormat("csv")}
+                />
+                <span>CSV (.csv)</span>
+              </label>
+              <label className={styles.formatOption}>
+                <input
+                  type="radio"
+                  name="export-format"
+                  checked={exportFormat === "pdf"}
+                  onChange={() => setExportFormat("pdf")}
+                />
+                <span>PDF (.pdf)</span>
+              </label>
+            </div>
+            <div className={styles.modalActions}>
+              <button
+                type="button"
+                className={styles.modalCancel}
+                onClick={() => setExportOpen(false)}
+                disabled={exporting}
+              >
+                {"\ucde8\uc18c"}
+              </button>
+              <button
+                type="button"
+                className={styles.modalPrimary}
+                onClick={handleConfirmExport}
+                disabled={exporting}
+                id="manage-export-confirm-btn"
+              >
+                {exporting ? "\uc900\ube44 \uc911\u2026" : "\ub2e4\uc6b4\ub85c\ub4dc"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className={styles.content}>
         {locations.length === 0 ? (
@@ -102,13 +318,19 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <div className={styles.emptyIcon}>📭</div>
-            <p>저장된 주소가 없어요</p>
-            <p className={styles.emptyHint}>홈 화면으로 돌아가서 주소를 추가해보세요</p>
+            <div className={styles.emptyIcon}>{"\ud83d\udced"}</div>
+            <p>{"\uc800\uc7a5\ub41c \uc8fc\uc18c\uac00 \uc5c6\uc5b4\uc694"}</p>
+            <p className={styles.emptyHint}>
+              {
+                "\ud648 \ud654\uba74\uc73c\ub85c \ub3cc\uc544\uac00\uc11c \uc8fc\uc18c\ub97c \ucd94\uac00\ud574\ubcf4\uc138\uc694"
+              }
+            </p>
           </motion.div>
         ) : (
           <>
-            <div className="section-title">{locations.length}개의 저장된 주소</div>
+            <div className="section-title">
+              {`${locations.length}\uac1c\uc758 \uc800\uc7a5\ub41c \uc8fc\uc18c`}
+            </div>
             <AnimatePresence>
               {locations.map((loc, i) => (
                 <motion.div
@@ -127,10 +349,9 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                   layout
                 >
                   {editingId === loc.id ? (
-                    /* Edit mode */
                     <div className={styles.editMode}>
                       <div className={styles.editField}>
-                        <label className={styles.editLabel}>별명 수정</label>
+                        <label className={styles.editLabel}>{"\ubcc4\uba85 \uc218\uc815"}</label>
                         <input
                           className={styles.editInput}
                           value={editNickname}
@@ -145,7 +366,7 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                       </div>
                       <div className={styles.editField}>
                         <label className={styles.editLabel} htmlFor={`edit-phone-${loc.id}`}>
-                          전화번호
+                          {"\uc804\ud654\ubc88\ud638"}
                         </label>
                         <input
                           id={`edit-phone-${loc.id}`}
@@ -155,12 +376,12 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                           autoComplete="tel"
                           value={editPhone}
                           onChange={(e) => setEditPhone(e.target.value)}
-                          placeholder="선택"
+                          placeholder={"\uc120\ud0dd"}
                         />
                       </div>
                       <div className={styles.editAddr}>{loc.address}</div>
                       <div className={styles.editField}>
-                        <label className={styles.editLabel}>성별</label>
+                        <label className={styles.editLabel}>{"\uc131\ubcc4"}</label>
                         <div className={styles.editGroupRow}>
                           <label
                             className={`${styles.editGroupOption} ${editGender === "male" ? styles.editGroupSelected : ""}`}
@@ -171,7 +392,7 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                               checked={editGender === "male"}
                               onChange={() => setEditGender("male")}
                             />
-                            <span>남성</span>
+                            <span>{"\ub0a8\uc131"}</span>
                           </label>
                           <label
                             className={`${styles.editGroupOption} ${editGender === "female" ? styles.editGroupSelected : ""}`}
@@ -182,12 +403,12 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                               checked={editGender === "female"}
                               onChange={() => setEditGender("female")}
                             />
-                            <span>여성</span>
+                            <span>{"\uc5ec\uc131"}</span>
                           </label>
                         </div>
                       </div>
                       <div className={styles.editField}>
-                        <label className={styles.editLabel}>그룹</label>
+                        <label className={styles.editLabel}>{"\uadf8\ub8f9"}</label>
                         <div className={styles.editGroupRow}>
                           <label
                             className={`${styles.editGroupOption} ${editGroup === "fixed" ? styles.editGroupSelected : ""}`}
@@ -198,7 +419,7 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                               checked={editGroup === "fixed"}
                               onChange={() => setEditGroup("fixed")}
                             />
-                            <span>고정</span>
+                            <span>{"\uace0\uc815"}</span>
                           </label>
                           <label
                             className={`${styles.editGroupOption} ${editGroup === "temporary" ? styles.editGroupSelected : ""}`}
@@ -209,13 +430,18 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                               checked={editGroup === "temporary"}
                               onChange={() => setEditGroup("temporary")}
                             />
-                            <span>임시</span>
+                            <span>{"\uc784\uc2dc"}</span>
                           </label>
                         </div>
                       </div>
                       <div className={styles.editActions}>
-                        <button className="btn btn-ghost" onClick={cancelEdit} style={{ padding: "8px 16px" }} id={`cancel-edit-${loc.id}`}>
-                          취소
+                        <button
+                          className="btn btn-ghost"
+                          onClick={cancelEdit}
+                          style={{ padding: "8px 16px" }}
+                          id={`cancel-edit-${loc.id}`}
+                        >
+                          {"\ucde8\uc18c"}
                         </button>
                         <button
                           className="btn btn-primary"
@@ -224,12 +450,11 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                           style={{ padding: "8px 20px", borderRadius: 10 }}
                           id={`save-edit-${loc.id}`}
                         >
-                          {savingId === loc.id ? "저장 중..." : "저장"}
+                          {savingId === loc.id ? "\uc800\uc7a5 \uc911..." : "\uc800\uc7a5"}
                         </button>
                       </div>
                     </div>
                   ) : (
-                    /* View mode */
                     <div className={styles.viewMode}>
                       <div className={styles.cardIcon}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -247,13 +472,15 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                                 : styles.groupBadgeFixed
                             }
                           >
-                            {loc.group === "temporary" ? "임시" : "고정"}
+                            {loc.group === "temporary"
+                              ? "\uc784\uc2dc"
+                              : "\uace0\uc815"}
                           </span>
                           {loc.gender === "male" && (
-                            <span className={styles.genderBadgeMale}>남</span>
+                            <span className={styles.genderBadgeMale}>{"\ub0a8"}</span>
                           )}
                           {loc.gender === "female" && (
-                            <span className={styles.genderBadgeFemale}>여</span>
+                            <span className={styles.genderBadgeFemale}>{"\uc5ec"}</span>
                           )}
                         </div>
                         <span className={styles.address}>{loc.address}</span>
@@ -270,7 +497,7 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                         <button
                           className={styles.editBtn}
                           onClick={() => startEdit(loc)}
-                          aria-label="수정"
+                          aria-label="\uc218\uc815"
                           id={`edit-btn-${loc.id}`}
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -282,7 +509,7 @@ export default function ManageAddressesView({ locations, onBack, onDelete, onUpd
                           className={styles.deleteBtn}
                           onClick={() => handleDelete(loc.id)}
                           disabled={deletingId === loc.id}
-                          aria-label="삭제"
+                          aria-label="\uc0ad\uc81c"
                           id={`delete-btn-${loc.id}`}
                         >
                           {deletingId === loc.id ? (

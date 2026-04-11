@@ -43,6 +43,12 @@ export default function HomeTab() {
     setView("main");
   };
 
+  const handleAddInManage = async (data: Omit<Location, "id">) => {
+    if (!user) return;
+    await addUserLocation(user.uid, data);
+    await fetchLocations();
+  };
+
   const handleDelete = async (id: string) => {
     if (!user) return;
     await deleteUserLocation(user.uid, id);
@@ -74,6 +80,7 @@ export default function HomeTab() {
         onBack={() => setView("main")}
         onDelete={handleDelete}
         onUpdate={handleUpdate}
+        onAdd={handleAddInManage}
       />
     );
   }

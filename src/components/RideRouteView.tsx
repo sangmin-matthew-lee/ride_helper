@@ -1,7 +1,11 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DragDropContext, Draggable, Droppable, type DropResult } from "@hello-pangea/dnd";
+import { AnimatePresence, motion } from "framer-motion";
 import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
-import { Location } from "@/types";
+import { Location, RideDayPeriod } from "@/types";
+import { formatRideSlotSummaryLine } from "@/lib/datetime";
+import schedStyles from "./RideScheduleView.module.css";
 import { loadAddressPickCounts, saveAddressPickCounts } from "@/lib/addressPickCounts";
 import styles from "./RideRouteView.module.css";
 
@@ -19,6 +23,10 @@ interface Props {
   userId: string;
   /** 라이드 일정(날짜·오전/오후) 요약 문구 */
   scheduleSummary?: string;
+  rideDateKey?: string;
+  ridePeriod?: RideDayPeriod;
+  onRideDateKeyChange?: (dateKey: string) => void;
+  onRidePeriodChange?: (period: RideDayPeriod) => void;
 }
 
 const mapOptions: google.maps.MapOptions = {
@@ -37,8 +45,13 @@ export default function RideRouteView({
   onPickRider,
   userId,
   scheduleSummary,
+  rideDateKey,
+  ridePeriod,
+  onRideDateKeyChange,
+  onRidePeriodChange,
 }: Props) {
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
   const [fixedOpen, setFixedOpen] = useState(true);
   const [tempOpen, setTempOpen] = useState(true);
   const [pickCounts, setPickCounts] = useState<Record<string, number>>({});
@@ -70,14 +83,20 @@ export default function RideRouteView({
     [locations, sortLocsByPickCount]
   );
 
+  const fixedLocsPickable = useMemo(
+    () => fixedLocs.filter((l) => !orderedIds.includes(l.id)),
+    [fixedLocs, orderedIds]
+  );
+  const tempLocsPickable = useMemo(
+    () => tempLocs.filter((l) => !orderedIds.includes(l.id)),
+    [tempLocs, orderedIds]
+  );
+
   const { isLoaded, loadError } = useJsApiLoader({
     id: "ride-route-map",
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
     libraries: ["places"],
   });
-
-  const isSelected = (id: string) => orderedIds.includes(id);
-  const getOrderNum = (id: string) => orderedIds.indexOf(id) + 1;
 
   /** 마지막으로 누른 행 (목록에 없어지면 무시, 첫 주소로 대체하지 않음) */
   const effectiveFocusId =
@@ -85,28 +104,39 @@ export default function RideRouteView({
       ? focusedId
       : null;
 
-  const handleToggle = (id: string) => {
-    if (isSelected(id)) {
-      onOrderedIdsChange(orderedIds.filter((r) => r !== id));
-    } else {
-      const prev = loadAddressPickCounts(userId);
-      saveAddressPickCounts(userId, {
-        ...prev,
-        [id]: (prev[id] ?? 0) + 1,
-      });
-      onOrderedIdsChange([...orderedIds, id]);
-    }
+  const handleAddFromList = (id: string) => {
+    if (orderedIds.includes(id)) return;
+    setFocusedId(id);
+    const prev = loadAddressPickCounts(userId);
+    saveAddressPickCounts(userId, {
+      ...prev,
+      [id]: (prev[id] ?? 0) + 1,
+    });
+    onOrderedIdsChange([...orderedIds, id]);
   };
 
-  const handleRowClick = (id: string) => {
-    setFocusedId(id);
-    handleToggle(id);
+  const handlePreviewDragEnd = (result: DropResult) => {
+    if (!result.destination) return;
+    const next = Array.from(orderedIds);
+    const [removed] = next.splice(result.source.index, 1);
+    next.splice(result.destination.index, 0, removed);
+    onOrderedIdsChange(next);
+  };
+
+  const removeFromRoute = (id: string) => {
+    onOrderedIdsChange(orderedIds.filter((x) => x !== id));
   };
 
   const handlePickRider = () => {
     if (orderedIds.length === 0) return;
     onPickRider();
   };
+
+  const scheduleEditable =
+    rideDateKey != null &&
+    ridePeriod != null &&
+    onRideDateKeyChange != null &&
+    onRidePeriodChange != null;
 
   const routeLocations = orderedIds
     .map((id) => locations.find((l) => l.id === id))
@@ -149,9 +179,14 @@ export default function RideRouteView({
     return () => cancelAnimationFrame(id);
   }, [isLoaded, fitMapToPoints, locations.length]);
 
-  const renderAddressRow = (loc: Location) => {
-    const selected = isSelected(loc.id);
-    const orderNum = selected ? getOrderNum(loc.id) : null;
+  const listMotion = {
+    initial: { opacity: 0, x: -20 },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: -28 },
+    transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const },
+  };
+
+  const renderPickableRow = (loc: Location) => {
     const isFocused = effectiveFocusId === loc.id;
     const genderClass =
       loc.gender === "male"
@@ -162,26 +197,16 @@ export default function RideRouteView({
 
     return (
       <button
-        key={loc.id}
         type="button"
-        className={`${styles.item} ${genderClass} ${selected ? styles.itemSelected : ""} ${isFocused ? styles.itemFocused : ""}`}
-        onClick={() => handleRowClick(loc.id)}
+        className={`${styles.item} ${genderClass} ${isFocused ? styles.itemFocused : ""}`}
+        onClick={() => handleAddFromList(loc.id)}
         id={`route-item-${loc.id}`}
       >
-        <div className={`${styles.orderBadge} ${selected ? styles.orderBadgeActive : ""}`}>
-          {selected ? orderNum : ""}
-        </div>
+        <div className={styles.orderBadge} />
         <div className={styles.itemInfo}>
           <div className={styles.itemNick}>{loc.nickname}</div>
           <div className={styles.itemAddr}>{loc.address}</div>
         </div>
-        {selected && (
-          <div className={styles.checkIcon}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M20 6 9 17l-5-5"/>
-            </svg>
-          </div>
-        )}
       </button>
     );
   };
@@ -199,23 +224,159 @@ export default function RideRouteView({
       </div>
 
       {scheduleSummary ? (
-        <div className={styles.scheduleBanner} id="route-schedule-summary">
-          {scheduleSummary}
+        scheduleEditable ? (
+          <button
+            type="button"
+            className={styles.scheduleBannerButton}
+            id="route-schedule-summary"
+            onClick={() => setScheduleModalOpen(true)}
+            aria-haspopup="dialog"
+            aria-expanded={scheduleModalOpen}
+            aria-label="라이드 일정 변경"
+          >
+            {scheduleSummary}
+          </button>
+        ) : (
+          <div className={styles.scheduleBanner} id="route-schedule-summary">
+            {scheduleSummary}
+          </div>
+        )
+      ) : null}
+
+      {scheduleModalOpen && scheduleEditable ? (
+        <div
+          className={styles.scheduleModalBackdrop}
+          role="presentation"
+          onClick={() => setScheduleModalOpen(false)}
+        >
+          <div
+            className={styles.scheduleModalPanel}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="route-schedule-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={styles.scheduleModalHeader}>
+              <h3 className={styles.scheduleModalTitle} id="route-schedule-modal-title">
+                라이드 일정
+              </h3>
+              <button
+                type="button"
+                className={styles.scheduleModalClose}
+                onClick={() => setScheduleModalOpen(false)}
+                id="route-schedule-modal-close"
+              >
+                {"\uB2EB\uAE30"}
+              </button>
+            </div>
+            <p className={schedStyles.lead} style={{ marginBottom: 4 }}>
+              {"\uB0A0\uC9DC\uC640 \uC624\uC804\u00B7\uC624\uD6C4\uB97C \uBC14\uAFC0 \uC218 \uC788\uC5B4\uC694."}
+            </p>
+            <div className={schedStyles.fieldBlock}>
+              <span className={schedStyles.fieldLabel}>{"\uB0A0\uC9DC"}</span>
+              <input
+                type="date"
+                className={schedStyles.dateInput}
+                value={rideDateKey}
+                onChange={(e) => onRideDateKeyChange(e.target.value)}
+                id="route-modal-schedule-date"
+              />
+            </div>
+            <div className={schedStyles.fieldBlock}>
+              <span className={schedStyles.fieldLabel}>오전 / 오후</span>
+              <div className={schedStyles.periodRow}>
+                <button
+                  type="button"
+                  className={`${schedStyles.periodBtn} ${ridePeriod === "am" ? schedStyles.periodBtnActive : ""}`}
+                  onClick={() => onRidePeriodChange("am")}
+                  id="route-modal-schedule-am"
+                >
+                  오전
+                </button>
+                <button
+                  type="button"
+                  className={`${schedStyles.periodBtn} ${ridePeriod === "pm" ? schedStyles.periodBtnActive : ""}`}
+                  onClick={() => onRidePeriodChange("pm")}
+                  id="route-modal-schedule-pm"
+                >
+                  오후
+                </button>
+              </div>
+            </div>
+            <div className={schedStyles.previewCard}>
+              <div className={schedStyles.previewLabel}>선택한 일정</div>
+              <div className={schedStyles.previewValue}>
+                {formatRideSlotSummaryLine(rideDateKey, ridePeriod)}
+              </div>
+            </div>
+            <button
+              type="button"
+              className={`btn btn-primary ${styles.scheduleModalDone}`}
+              onClick={() => setScheduleModalOpen(false)}
+              id="route-schedule-modal-done"
+            >
+              확인
+            </button>
+          </div>
         </div>
       ) : null}
 
       <div className={styles.previewStrip}>
         {routeLocations.length === 0 ? (
-          <p className={styles.previewEmpty}>아래 주소를 순서대로 클릭해서 경로를 설정하세요</p>
+          <p className={styles.previewEmpty}>
+            아래에서 주소를 클릭해 추가하고, 위 칩을 드래그해 순서를 바꿀 수 있어요
+          </p>
         ) : (
-          <div className={styles.previewRoute}>
-            {routeLocations.map((loc, i) => (
-              <span key={loc.id} className={styles.previewItem}>
-                {i > 0 && <span className={styles.previewArrow}>→</span>}
-                <span className={styles.previewName}>{loc.nickname}</span>
-              </span>
-            ))}
-          </div>
+          <DragDropContext onDragEnd={handlePreviewDragEnd}>
+            <Droppable droppableId="route-preview" direction="horizontal">
+              {(dropProvided) => (
+                <div
+                  ref={dropProvided.innerRef}
+                  {...dropProvided.droppableProps}
+                  className={styles.previewRoute}
+                >
+                  {routeLocations.map((loc, index) => (
+                    <Draggable key={loc.id} draggableId={loc.id} index={index}>
+                      {(dragProvided, snapshot) => (
+                        <div
+                          ref={dragProvided.innerRef}
+                          {...dragProvided.draggableProps}
+                          className={`${styles.previewItem} ${snapshot.isDragging ? styles.previewItemDragging : ""}`}
+                        >
+                          {index > 0 ? (
+                            <span className={styles.previewArrow} aria-hidden>
+                              →
+                            </span>
+                          ) : null}
+                          <span
+                            className={styles.previewChipWrap}
+                            {...dragProvided.dragHandleProps}
+                          >
+                            <span className={styles.previewName}>{loc.nickname}</span>
+                            <button
+                              type="button"
+                              className={styles.previewRemove}
+                              aria-label={`${loc.nickname} 경로에서 제거`}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeFromRoute(loc.id);
+                              }}
+                            >
+                              ×
+                            </button>
+                          </span>
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {dropProvided.placeholder}
+                </div>
+              )}
+            </Droppable>
+          </DragDropContext>
         )}
       </div>
 
@@ -258,8 +419,16 @@ export default function RideRouteView({
                 <div className={styles.listColumnScroll} id="route-group-fixed" role="region" aria-labelledby="route-toggle-fixed">
                   {fixedLocs.length === 0 ? (
                     <p className={styles.columnEmpty}>고정 주소 없음</p>
+                  ) : fixedLocsPickable.length === 0 ? (
+                    <p className={styles.columnEmpty}>고정 주소는 모두 경로에 포함되어 있어요</p>
                   ) : (
-                    fixedLocs.map(renderAddressRow)
+                    <AnimatePresence initial={false} mode="popLayout">
+                      {fixedLocsPickable.map((loc) => (
+                        <motion.div key={loc.id} layout {...listMotion}>
+                          {renderPickableRow(loc)}
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
                   )}
                 </div>
               ) : null}
@@ -297,8 +466,16 @@ export default function RideRouteView({
                 <div className={styles.listColumnScroll} id="route-group-temp" role="region" aria-labelledby="route-toggle-temp">
                   {tempLocs.length === 0 ? (
                     <p className={styles.columnEmpty}>임시 주소 없음</p>
+                  ) : tempLocsPickable.length === 0 ? (
+                    <p className={styles.columnEmpty}>임시 주소는 모두 경로에 포함되어 있어요</p>
                   ) : (
-                    tempLocs.map(renderAddressRow)
+                    <AnimatePresence initial={false} mode="popLayout">
+                      {tempLocsPickable.map((loc) => (
+                        <motion.div key={loc.id} layout {...listMotion}>
+                          {renderPickableRow(loc)}
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
                   )}
                 </div>
               ) : null}
